@@ -1,33 +1,22 @@
-# -*- coding: utf-8 -*-
-#
-# This module implements LFU cache in python using just one class,
-# nevertheless, for the most basic operations (add/get) should be still quite fast.
-# You can also remove cache entries by priority or key, although, this may be slow depending on the size.
-# Uneless you're making something fancy, usually it should be enough to just use the `create_lfu_cache` decorator
-# on your function.
-# Example:
-#
-# from lfu_cache import create_lfu_cache
-#
-# @create_lfu_cache(limit=1024, typed=True)
-# def expensive_function(arg):
-#     *heavy processing*
-#     return arg
-#
-# That'll cache 1024 precisely stored inputs (since `typed` is set `True`) and outputs. Bear in mind,
-# the first execution may take more time, but you save more time with each next call.
-# You can access the original (w/o the decorator, not affected by the cache system) function using
-# the `__wrapped__` property, the `__cache__` property can be used to access the LFUCache object of the function.
-# The cache object has 2 useful property for debugging: `hits` and `misses`, showing how effective the cache was reused.
-
-### START LFU Cache implementation
+"""
+Sub-module contains main classes
+"""
 
 from threading import RLock
 from collections import namedtuple
+from typing import (
+    Optional,
+    Any,
+    List,
+    Dict
+)
+
 
 _CacheEntry = namedtuple("CacheEntry", ("key", "value", "access_count"))
 
-class LFUCache(object):
+class LFUCacheException(Exception): pass
+
+class LFUCache():
     """
     Python implementation of LFU (Least Frequently Used) cache
 
@@ -39,7 +28,7 @@ class LFUCache(object):
         hits - (int) number of times the cache was reused
         misses - (int) number of times the cache was written
     """
-    def __init__(self, limit=128):
+    def __init__(self, limit: int = 128) -> None:
         """
         Constructor for cache instances
 
@@ -55,37 +44,50 @@ class LFUCache(object):
                 and limit >= 0
             )
         ):
-            raise Exception("LFUCache expects its limit to be an intenger >= 0 or NoneType.")
+            raise LFUCacheException(
+                f"LFUCache expects its limit to be an intenger >= 0 or NoneType, got {limit}"
+            )
 
         self._limit = limit
-        # key: [queue_id + value]
-        self._cache_entries = dict()
-        # queue_id: [access_count + key]
-        self._priority_queue = list()
+        # key: [queue_id, value]
+        self._cache_entries: Dict[str, List[int, str]] = dict()
+        # queue_id: [key, access_count]
+        self._priority_queue: List[List[str, int]] = list()
         self._hits = 0
-        self._misses= 0
+        self._misses = 0
         self._lock = RLock()
 
-    def __repr__(self):
+    def __get_hex_id(self) -> str:
+        """
+        Returns id of this object
+        """
+        return hex(int(id(self))).upper()
+
+    def __str__(self) -> str:
         """
         Representation of this object
         """
-        return "<LFUCache ({0}/{1} entries) at {2}>".format(
-            len(self._priority_queue),
-            self._limit,
-            hex(int(id(self))).upper()
-        )
+        return f"<LFUCache ({len(self._priority_queue)}/{self._limit} entries) at {self.__get_hex_id()}>"
+
+    def __repr__(self) -> str:
+        """
+        Representation of this object
+        """
+        return f"<LFUCache(limit={self._limit}) at {self.__get_hex_id()}>"
 
     @property
-    def limit(self):
+    def limit(self) -> Optional[int]:
         return self._limit
 
     @limit.setter
-    def limit(self, new_limit):
+    def limit(self, new_limit: Optional[int]) -> None:
         with self._lock:
             # If the new limit is smaller than the current,
             # we may need to remove some of our cache entries
             if new_limit is not None:
+                if not isinstance(new_limit, int) or new_limit < 0:
+                    raise LFUCacheException("limit must be >= 0 or be NoneType.")
+
                 excessive_entries = len(self._priority_queue) - new_limit
                 while excessive_entries > 0:
                     item = self._priority_queue.pop()
@@ -96,22 +98,22 @@ class LFUCache(object):
             self._limit = new_limit
 
     @property
-    def hits(self):
+    def hits(self) -> int:
         return self._hits
 
     @property
-    def misses(self):
+    def misses(self) -> int:
         return self._misses
 
-    def clear(self):
+    def clear(self) -> None:
         """
         Clears this cache
         """
         with self._lock:
             self._cache_entries.clear()
-            self._priority_queue[:] = []
+            self._priority_queue.clear()
 
-    def add(self, key, value, update=False):
+    def add(self, key, value, update=False) -> bool:
         """
         Adds a new entry with the given key and value.
 
@@ -148,14 +150,14 @@ class LFUCache(object):
 
             return False
 
-    def has_cache(self, key):
+    def has_cache(self, key: str) -> bool:
         """
         Checks if we have a cache for the given key
         """
         with self._lock:
             return key in self._cache_entries
 
-    def get(self, key, default=None):
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Retrieves an entry by key
 
@@ -175,7 +177,7 @@ class LFUCache(object):
             self._increment_access_count(key)
             return self._cache_entries[key][1]
 
-    def remove(self, key):
+    def remove(self, key: str) -> bool:
         """
         Removes an entry by key
 
@@ -201,7 +203,7 @@ class LFUCache(object):
 
             return True
 
-    def _remove_by_id(self, queue_id):
+    def _remove_by_id(self, queue_id: int) -> bool:
         """
         Removes an entry by id
 
@@ -225,7 +227,7 @@ class LFUCache(object):
 
             return True
 
-    def _increment_access_count(self, key):
+    def _increment_access_count(self, key: str) -> None:
         """
         Increments counter for the entry with the given key
         and adjusts its priority
@@ -257,7 +259,7 @@ class LFUCache(object):
             value = self._cache_entries[key][1]
             self._cache_entries[key] = [queue_id, value]
 
-    def retrieve(self, start=None, end=None):
+    def retrieve(self, start: Optional[int] = None, end: Optional[int] = None) -> List[_CacheEntry]:
         """
         Retrieves keys, their values and access counters
         NOTE: this may be very slow depending on size
@@ -276,125 +278,3 @@ class LFUCache(object):
             _CacheEntry(key, self._cache_entries[key][1], access_count)
             for key, access_count in self._priority_queue[start:end]
         ]
-
-### END LFU Cache implementation
-### START functools stuff
-
-from functools import wraps
-
-FASTTYPES = {int, str}
-KWD_MARK = (object(),)
-
-class _HashedSeq(list):
-    """
-    This class guarantees that hash() will be called no more than once
-    per element.
-    """
-
-    __slots__ = "hashvalue"
-
-    def __init__(self, tup, hash=hash):
-        self[:] = tup
-        self.hashvalue = hash(tup)
-
-    def __hash__(self):
-        return self.hashvalue
-
-def _make_key(args, kwargs, typed):
-    """
-    Make a cache key from optionally typed positional and keyword arguments.
-    The key is constructed in a way that is flat as possible rather than
-    as a nested structure that would take more memory.
-    If there is only a single argument and its data type is known to cache
-    its hash value, then that argument is returned without a wrapper.  This
-    saves space and improves lookup speed.
-    """
-    # All of code below relies on kwds preserving the order input by the user.
-    # Formerly, we sorted() the kwds before looping. The new way is *much*
-    # faster; however, it means that f(x=1, y=2) will now be treated as a
-    # distinct call from f(y=2, x=1) which will be cached separately.
-    key = args
-    if kwargs:
-        key += KWD_MARK
-        for item in kwargs.items():
-            key += item
-
-    if typed:
-        key += tuple(type(v) for v in args)
-        if kwargs:
-            key += tuple(type(v) for v in kwargs.values())
-
-    elif len(key) == 1 and type(key[0]) in FASTTYPES:
-        return key[0]
-
-    return _HashedSeq(key)
-
-### END functools stuff
-### START decorators
-
-funcs_cache_map = dict()
-
-def create_lfu_cache(limit=128, typed=False):
-    """
-    Decorator to create LFU cache for a function
-    NOTE: Arguments to the cached function must be hashable
-    NOTE: The original function can be accessed using the __wrapped__ property
-    NOTE: the cache can be accessed using the __cache__ property
-
-    IN:
-        limit - max number of entries in the cache,
-            If None, the cache can grow infinitely
-            (Default: 128)
-        typed - whether or not we respect types of parameters,
-            which allows more precise caching, but demands more performance
-            (Default: False)
-
-    OUT:
-        decorated function
-    """
-    def decorator(func):
-        """
-        The decorator
-
-        IN:
-            func - function
-
-        OUT:
-            decorated function
-        """
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            """
-            The wrapper
-
-            IN:
-                args - function position arguments
-                kwargs - function keyword arguments
-
-            OUT:
-                value returned by the function
-            """
-            cache = funcs_cache_map[func]
-            key = _make_key(args, kwargs, typed)
-
-            if cache.has_cache(key):
-                return cache.get(key)
-
-            value = func(*args, **kwargs)
-            cache.add(key, value)
-
-            return value
-
-        if func in funcs_cache_map:
-            raise Exception("Function '{0}' already has an associated LFU cache object.".format(func))
-
-        cache = LFUCache(limit)
-        funcs_cache_map[func] = cache
-        setattr(wrapper, "__wrapped__", func)
-        setattr(wrapper, "__cache__", cache)
-
-        return wrapper
-
-    return decorator
-
-### End decorators
