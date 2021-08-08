@@ -45,7 +45,7 @@ class LFUCache():
             )
         ):
             raise LFUCacheException(
-                f"LFUCache expects its limit to be an intenger >= 0 or NoneType, got {limit}"
+                f"LFUCache expects its limit to be an intenger >= 0 or NoneType, got {limit}."
             )
 
         self._limit = limit
@@ -67,13 +67,19 @@ class LFUCache():
         """
         Representation of this object
         """
-        return f"<LFUCache ({len(self._priority_queue)}/{self._limit} entries) at {self.__get_hex_id()}>"
+        return f"<LFUCache ({len(self)}/{self._limit} entries) at {self.__get_hex_id()}>"
 
     def __repr__(self) -> str:
         """
         Representation of this object
         """
         return f"<LFUCache(limit={self._limit}) at {self.__get_hex_id()}>"
+
+    def __len__(self) -> int:
+        """
+        Returns size of this cache
+        """
+        return len(self._priority_queue)
 
     @property
     def limit(self) -> Optional[int]:
@@ -88,7 +94,7 @@ class LFUCache():
                 if not isinstance(new_limit, int) or new_limit < 0:
                     raise LFUCacheException("limit must be >= 0 or be NoneType.")
 
-                excessive_entries = len(self._priority_queue) - new_limit
+                excessive_entries = len(self) - new_limit
                 while excessive_entries > 0:
                     item = self._priority_queue.pop()
                     del self._cache_entries[item[0]]
@@ -132,7 +138,7 @@ class LFUCache():
                 return False
 
             if not self.has_cache(key):
-                queue_len = len(self._priority_queue)
+                queue_len = len(self)
                 if self._limit is not None and queue_len >= self._limit:
                     self._remove_by_id(self._limit - 1)
                     queue_len -= 1
@@ -214,7 +220,7 @@ class LFUCache():
             boolean whether or not the entry was removed from the cache
         """
         with self._lock:
-            if not (len(self._priority_queue) > queue_id >= 0):
+            if not (len(self) > queue_id >= 0):
                 return False
 
             key = self._priority_queue[queue_id][0]
